@@ -1,0 +1,236 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.11">
+  <POU Name="MAIN" Id="{f2f4fb7b-db5e-4e1a-9b30-5c1b4a8256fe}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	fbAxis						: AXIS_REF;
+	fbPower						: MC_Power;
+	fbMoveAbs_AC				: MC_MoveAbsolute;
+	fbMoveAbs_CD				: MC_MoveAbsolute;
+	fbMoveAbs_DE				: MC_MoveAbsolute;
+	fbMoveAbs_EB				: MC_MoveAbsolute;
+	fbMoveAbs_BA				: MC_MoveAbsolute;
+	
+	stFastCondition				: stCondition;
+	stSlowCondition				: stCondition;
+	
+	iState						: UINT;
+	bInitialized				: BOOL;
+	bStartMove					: BOOL;
+	
+	bExeMoveAbs_AC				: BOOL;
+	bExeMoveAbs_CD				: BOOL;
+	bExeMoveAbs_DE				: BOOL;
+	bExeMoveAbs_EB				: BOOL;
+	bExeMoveAbs_BA				: BOOL;
+	lrTargetPos_B				: LREAL := 500;					
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE iState OF
+	0: //初期化を始めますか
+	IF bInitialized THEN
+		iState := 10;
+	END_IF
+	
+	10: //条件を設定します
+	iState := 20;
+	stFastCondition.lrVelocity := 100;
+	stFastCondition.lrAcceleration := 1000;
+	stFastCondition.lrDeceleration := 1000;
+	stFastCondition.lrJerk := 10000;
+	
+	stSlowCondition.lrVelocity := 50;
+	stSlowCondition.lrAcceleration := 500;
+	stSlowCondition.lrDeceleration := 500;
+	stSlowCondition.lrJerk := 5000;
+
+	20: // サーボオンします
+	fbPower(
+		Axis:= fbAxis, 
+		Enable:= TRUE, 
+		Enable_Positive:= TRUE, 
+		Enable_Negative:= TRUE, 
+		Override:= , 
+		BufferMode:= , 
+		Options:= );
+		
+	IF fbPower.Status THEN
+		//サーボオンしたら次へ
+		iState := 100;
+	END_IF
+		
+	100: //動作を開始しますか
+	IF bStartMove THEN
+		iState := 110;
+	END_IF
+	
+	110: 
+	IF (-0.1 < fbAxis.NcToPlc.ActPos) AND (fbAxis.NcToPlc.ActPos < 0.1) THEN
+		//初期地点でAからCに移動
+		bExeMoveAbs_AC := TRUE;
+		bExeMoveAbs_CD := FALSE;
+		bExeMoveAbs_DE := FALSE;
+		bExeMoveAbs_EB := FALSE;
+		bExeMoveAbs_BA := FALSE;
+	ELSIF (100 < fbAxis.NcToPlc.ActPos) AND (fbAxis.NcToPlc.ActPos < 200) THEN
+		// C地点についたら条件を変えてD地点に移動
+		bExeMoveAbs_AC := FALSE;
+		bExeMoveAbs_CD := TRUE;
+		bExeMoveAbs_DE := FALSE;
+		bExeMoveAbs_EB := FALSE;
+		bExeMoveAbs_BA := FALSE;
+	ELSIF (200 < fbAxis.NcToPlc.ActPos) AND (fbAxis.NcToPlc.ActPos < 300) THEN
+		// D地点についたら条件を変えてE地点に移動
+		bExeMoveAbs_AC := FALSE;
+		bExeMoveAbs_CD := FALSE;
+		bExeMoveAbs_DE := TRUE;
+		bExeMoveAbs_EB := FALSE;
+		bExeMoveAbs_BA := FALSE;
+	ELSIF (300 < fbAxis.NcToPlc.ActPos) AND (fbAxis.NcToPlc.ActPos < 400) THEN
+		// E地点についたら条件を変えてB地点に移動
+		bExeMoveAbs_AC := FALSE;
+		bExeMoveAbs_CD := FALSE;
+		bExeMoveAbs_DE := FALSE;
+		bExeMoveAbs_EB := TRUE;
+		bExeMoveAbs_BA := FALSE;
+	END_IF
+	
+	IF fbMoveAbs_EB.Done THEN
+		//Bに到着
+		iState := 120;
+	END_IF
+
+// A>C 高速条件
+	fbMoveAbs_AC(
+		Axis:= fbAxis, 
+		Execute:= bExeMoveAbs_AC, 
+		Position:= lrTargetPos_B, 
+		Velocity:= stFastCondition.lrVelocity, 
+		Acceleration:= stFastCondition.lrAcceleration, 
+		Deceleration:= stFastCondition.lrDeceleration, 
+		Jerk:= stFastCondition.lrJerk, 
+		BufferMode:= , 
+		Options:= );
+		
+	// C>D 低速条件
+	fbMoveAbs_CD(
+		Axis:= fbAxis, 
+		Execute:= bExeMoveAbs_CD, 
+		Position:= lrTargetPos_B, 
+		Velocity:= stSlowCondition.lrVelocity, 
+		Acceleration:= stSlowCondition.lrAcceleration, 
+		Deceleration:= stSlowCondition.lrDeceleration, 
+		Jerk:= stSlowCondition.lrJerk, 
+		BufferMode:= , 
+		Options:= );
+		
+	// D>E 高速条件
+	fbMoveAbs_DE(
+		Axis:= fbAxis, 
+		Execute:= bExeMoveAbs_DE, 
+		Position:= lrTargetPos_B, 
+		Velocity:= stFastCondition.lrVelocity, 
+		Acceleration:= stFastCondition.lrAcceleration, 
+		Deceleration:= stFastCondition.lrDeceleration, 
+		Jerk:= stFastCondition.lrJerk, 
+		BufferMode:= , 
+		Options:= );
+		
+	// E>B 低速条件
+	fbMoveAbs_EB(
+		Axis:= fbAxis, 
+		Execute:= bExeMoveAbs_EB, 
+		Position:= lrTargetPos_B, 
+		Velocity:= stSlowCondition.lrVelocity, 
+		Acceleration:= stSlowCondition.lrAcceleration, 
+		Deceleration:= stSlowCondition.lrDeceleration, 
+		Jerk:= stSlowCondition.lrJerk, 
+		BufferMode:= , 
+		Options:= );	
+	
+	120:
+	IF fbMoveAbs_BA.Done THEN
+		//Bに到着
+		iState := 100;
+		bExeMoveAbs_AC := FALSE;
+		bExeMoveAbs_CD := FALSE;
+		bExeMoveAbs_DE := FALSE;
+		bExeMoveAbs_EB := FALSE;
+		bExeMoveAbs_BA := FALSE;
+	ELSE
+		bExeMoveAbs_AC := FALSE;
+		bExeMoveAbs_CD := FALSE;
+		bExeMoveAbs_DE := FALSE;
+		bExeMoveAbs_EB := FALSE;
+		bExeMoveAbs_BA := TRUE;
+	END_IF
+		
+	// B>A 高速条件
+	fbMoveAbs_BA(
+		Axis:= fbAxis, 
+		Execute:= bExeMoveAbs_BA, 
+		Position:= 0, 
+		Velocity:= stFastCondition.lrVelocity, 
+		Acceleration:= stFastCondition.lrAcceleration, 
+		Deceleration:= stFastCondition.lrDeceleration, 
+		Jerk:= stFastCondition.lrJerk, 
+		BufferMode:= , 
+		Options:= );
+END_CASE]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="2" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="10" Count="2" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="70" Count="3" />
+      <LineId Id="75" Count="3" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="20" Count="6" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="39" Count="2" />
+      <LineId Id="43" Count="1" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="150" Count="3" />
+      <LineId Id="141" Count="2" />
+      <LineId Id="146" Count="3" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="155" Count="5" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="162" Count="5" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="186" Count="1" />
+      <LineId Id="192" Count="0" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="197" Count="46" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="193" Count="1" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="177" Count="3" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="247" Count="2" />
+      <LineId Id="246" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="122" Count="0" />
+      <LineId Id="124" Count="9" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="8" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
