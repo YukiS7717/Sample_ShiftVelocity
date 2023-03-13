@@ -1,0 +1,2 @@
+# Sample_TwinCAT_ShiftVelocity
+変速連続動作のサンプルプログラム
